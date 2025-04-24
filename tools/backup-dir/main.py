@@ -6,7 +6,7 @@ respecting .git directories and .gitignore patterns.
 
 import os
 import sys
-import tarfile
+import zipfile
 import argparse
 import logging
 import pathspec
@@ -58,30 +58,19 @@ class GitAwareBackup:
         if not output_file:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             base_name = os.path.basename(self.source_dir)
-            extension = self._get_extension(compression)
-            self.output_file = f"{base_name}_{timestamp}.tar{extension}"
+            self.output_file = f"{base_name}_{timestamp}.zip"
         else:
             self.output_file = output_file
     
-    def _get_extension(self, compression: str) -> str:
-        """Get the appropriate file extension based on compression type."""
-        compression_extensions = {
-            "gz": ".gz",
-            "bz2": ".bz2",
-            "xz": ".xz",
-            "none": ""
-        }
-        return compression_extensions.get(compression.lower(), ".gz")
-    
-    def _get_compression_mode(self) -> str:
-        """Get the appropriate tarfile mode based on compression type."""
+    def _get_compression_mode(self) -> int:
+        """Get the appropriate zipfile compression mode."""
         compression_modes = {
-            "gz": "w:gz",
-            "bz2": "w:bz2",
-            "xz": "w:xz",
-            "none": "w"
+            "gz": zipfile.ZIP_DEFLATED,
+            "bz2": zipfile.ZIP_BZIP2,
+            "xz": zipfile.ZIP_LZMA,
+            "none": zipfile.ZIP_STORED
         }
-        return compression_modes.get(self.compression.lower(), "w:gz")
+        return compression_modes.get(self.compression.lower(), zipfile.ZIP_DEFLATED)
     
     def _scan_directory(self) -> None:
         """Scan the directory to count files and collect gitignore specs."""
@@ -155,8 +144,8 @@ class GitAwareBackup:
             
             logger.info(f"Found {self.total_files} files to process.")
             
-            # Create tar archive
-            with tarfile.open(self.output_file, self._get_compression_mode()) as tar:
+            # Create ZIP archive
+            with zipfile.ZipFile(self.output_file, 'w', self._get_compression_mode()) as zipf:
                 # Initialize manifest file
                 with open(manifest_path, 'w', encoding='utf-8') as manifest:
                     manifest.write(f"# Backup created: {datetime.now().isoformat()}\n")
@@ -177,7 +166,7 @@ class GitAwareBackup:
                                 arcname = os.path.relpath(file_path, os.path.dirname(self.source_dir))
                                 
                                 # Add to archive
-                                tar.add(file_path, arcname=arcname)
+                                zipf.write(file_path, arcname=arcname)
                                 
                                 # Update manifest with file information
                                 if self.verbose:
@@ -199,7 +188,7 @@ class GitAwareBackup:
                 
                 # Add manifest to the archive
                 if self.verbose:
-                    tar.add(manifest_path, arcname="backup_manifest.txt")
+                    zipf.write(manifest_path, arcname="backup_manifest.txt")
                 
             # Clean up
             shutil.rmtree(temp_dir)
@@ -236,7 +225,7 @@ def main():
         description='Create a compressed backup excluding .git directories and respecting .gitignore files'
     )
     parser.add_argument('source', help='Source directory to backup')
-    parser.add_argument('-o', '--output', help='Output file name (default: source_timestamp.tar.gz)')
+    parser.add_argument('-o', '--output', help='Output file name (default: source_timestamp.zip)')
     parser.add_argument('-c', '--compression', choices=['gz', 'bz2', 'xz', 'none'], default='gz',
                         help='Compression algorithm to use (default: gz)')
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose output')
